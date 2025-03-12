@@ -1,0 +1,7 @@
+__pycache__
+datasets-origin/*
+venv
+*.pt
+*.h5
+datasets-origin-preprocessed/*
+results

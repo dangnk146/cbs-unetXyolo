@@ -1,0 +1,13 @@
+train: ../datasets-origin-preprocessed/train/images
+val: ../datasets-origin-preprocessed/valid/images
+test: ../datasets-origin-preprocessed/test/images
+
+nc: 7
+names: ['TYPE 1 - P05', 'TYPE 2 - IQA1425', 'TYPE 2 - IQA1900', 'TYPE 2 - IQA3800', 'TYPE 2 - IQA950', 'TYPE 7 - L1', 'TYPE2-IQA2750A']
+
+roboflow:
+  workspace: traningmodel-i0hxk
+  project: cbscountthings-b0vag
+  version: 2
+  license: CC BY 4.0
+  url: https://app.roboflow.com/traningmodel-i0hxk/cbscountthings-b0vag/2
