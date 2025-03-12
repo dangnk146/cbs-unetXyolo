@@ -225,9 +225,10 @@ def run_inference_on_test(test_images_folder, test_labels_folder="./datasets-ori
     for idx, img_path in enumerate(image_files):
         print(f"\n[DEBUG] Xử lý ảnh: {img_path}")
         gt_boxes = load_ground_truth_boxes(img_path, labels_folder=test_labels_folder)
+        no_label = False
         if not gt_boxes:
-            print("Không tìm thấy label cho ảnh này.")
-            continue
+            print("Không tìm thấy label cho ảnh này. Tiếp tục xử lý và đánh dấu 'nonlabel'.")
+            no_label = True
 
         results_pipeline = pipeline_inference(img_path, margin=margin)
         predicted_boxes = [res['bbox'] for res in results_pipeline]
@@ -242,15 +243,20 @@ def run_inference_on_test(test_images_folder, test_labels_folder="./datasets-ori
         total_objects = len(predicted_boxes)
         print(f"[DEBUG] Tổng số object phát hiện trên ảnh: {total_objects}")
 
-        true_positives = 0
-        for gt in gt_boxes:
-            for pred in predicted_boxes:
-                if compute_iou(gt, pred) >= iou_threshold:
-                    true_positives += 1
-                    break
-        image_accuracy = (true_positives / len(gt_boxes)) * 100
-        print(f"[DEBUG] Độ chính xác (detection) cho ảnh {os.path.basename(img_path)}: {image_accuracy:.2f}%")
-        total_accuracy += image_accuracy
+        # Tính độ chính xác chỉ khi có ground truth, nếu không thì đặt là N/A
+        if gt_boxes:
+            true_positives = 0
+            for gt in gt_boxes:
+                for pred in predicted_boxes:
+                    if compute_iou(gt, pred) >= iou_threshold:
+                        true_positives += 1
+                        break
+            image_accuracy = (true_positives / len(gt_boxes)) * 100
+            print(f"[DEBUG] Độ chính xác (detection) cho ảnh {os.path.basename(img_path)}: {image_accuracy:.2f}%")
+            total_accuracy += image_accuracy
+        else:
+            image_accuracy = None
+            print(f"[DEBUG] Độ chính xác (detection) cho ảnh {os.path.basename(img_path)}: N/A (không có label)")
         total_images += 1
 
         img = cv2.imread(img_path)
@@ -265,19 +271,29 @@ def run_inference_on_test(test_images_folder, test_labels_folder="./datasets-ori
             cv2.putText(img, type_text, (x1, y1 - 40), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,0,255), 2)
         
-        # Ghi tổng số object và độ chính xác lên ảnh
         cv2.putText(img, f"Total Objects: {total_objects}", (10, 30), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-        cv2.putText(img, f"Detection Acc: {image_accuracy:.2f}%", (10, 70), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        if image_accuracy is not None:
+            cv2.putText(img, f"Detection Acc: {image_accuracy:.2f}%", (10, 70), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        else:
+            cv2.putText(img, f"Detection Acc: N/A", (10, 70), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
         cv2.putText(img, f"IoU Thres: {iou_threshold}", (10, 110), 
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-        output_img_path = os.path.join(output_folder, f"result_{idx}.jpg")
+        
+        # Nếu không có label, thêm "nonlabel" vào tên file kết quả
+        base_name = os.path.basename(img_path)
+        if no_label:
+            base_name = os.path.splitext(base_name)[0] + "_nonlabel.jpg"
+        else:
+            base_name = os.path.splitext(base_name)[0] + ".jpg"
+        
+        output_img_path = os.path.join(output_folder, f"result_{idx}_{base_name}")
         cv2.imwrite(output_img_path, img)
         print(f"[DEBUG] Kết quả được lưu: {output_img_path}")
 
-    if total_images > 0:
+    if total_images > 0 and total_accuracy:
         avg_accuracy = total_accuracy / total_images
         print(f"[DEBUG] Độ chính xác trung bình trên tập test: {avg_accuracy:.2f}%")
     else:
