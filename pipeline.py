@@ -5,6 +5,7 @@ import numpy as np
 from ultralytics import YOLO
 from attention_unet import build_attention_unet
 import torch
+from sklearn.cluster import DBSCAN  # Thêm thư viện clustering
 
 # ------------------------------
 # Cấu hình và load mô hình YOLOv11s và Attention UNet
@@ -173,10 +174,6 @@ def pipeline_inference(image_path, margin=5):
         num_labels, _ = cv2.connectedComponents(mask_bin)
         count = num_labels - 1
 
-        # Ghi thông tin count lên ROI (bạn có thể lưu riêng mask nếu muốn)
-        cv2.putText(roi_resized, f"Count: {count}", (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
         final_results.append({
             'bbox': [x1, y1, x2, y2],
             'mask': mask_bin,
@@ -186,12 +183,40 @@ def pipeline_inference(image_path, margin=5):
     return final_results
 
 # ------------------------------
+# Hàm xử lý hình ảnh crowded scene bằng clustering
+# Nếu tổng số object vượt ngưỡng, ta sẽ cluster các bounding box để gộp lại
+# ------------------------------
+def adjust_for_crowded(predicted_boxes, crowded_threshold=50, eps=20):
+    """
+    predicted_boxes: danh sách các bbox [x1, y1, x2, y2]
+    crowded_threshold: ngưỡng nếu số object vượt quá threshold thì áp dụng clustering
+    eps: khoảng cách tối đa giữa các điểm để cùng 1 cụm
+    """
+    if len(predicted_boxes) <= crowded_threshold:
+        return predicted_boxes
+
+    centers = np.array([[(box[0] + box[2]) / 2, (box[1] + box[3]) / 2] for box in predicted_boxes])
+    clustering = DBSCAN(eps=eps, min_samples=1).fit(centers)
+    labels = clustering.labels_
+    unique_labels = set(labels)
+    new_boxes = []
+    for label in unique_labels:
+        indices = np.where(labels == label)[0]
+        boxes_cluster = np.array([predicted_boxes[i] for i in indices])
+        # Gộp bounding boxes bằng cách lấy min x, min y, max x, max y
+        x1 = int(np.min(boxes_cluster[:, 0]))
+        y1 = int(np.min(boxes_cluster[:, 1]))
+        x2 = int(np.max(boxes_cluster[:, 2]))
+        y2 = int(np.max(boxes_cluster[:, 3]))
+        new_boxes.append([x1, y1, x2, y2])
+    return new_boxes
+
+# ------------------------------
 # Hàm chạy inference trên tập test và so sánh với ground truth
 # ------------------------------
 def run_inference_on_test(test_images_folder, test_labels_folder="./datasets-origin/test/labels", output_folder="results", margin=20, iou_threshold=0.3):
     os.makedirs(output_folder, exist_ok=True)
     image_files = sorted(glob.glob(os.path.join(test_images_folder, "*.*")))
-    # Thông số IoU threshold dùng cho tính accuracy
     print(f"[DEBUG] IoU Threshold: {iou_threshold}")
 
     total_accuracy = 0
@@ -205,10 +230,17 @@ def run_inference_on_test(test_images_folder, test_labels_folder="./datasets-ori
             continue
 
         results_pipeline = pipeline_inference(img_path, margin=margin)
-        # Tính tổng số object được phát hiện trên ảnh từ các ROI
-        total_objects = sum([res['count'] for res in results_pipeline])
-        print(f"[DEBUG] Tổng số object phát hiện trên ảnh: {total_objects}")
         predicted_boxes = [res['bbox'] for res in results_pipeline]
+
+        # Nếu số object phát hiện quá nhiều, áp dụng clustering để gộp lại các bbox
+        if len(predicted_boxes) > 50:
+            print(f"[DEBUG] Crowded scene detected: {len(predicted_boxes)} objects. Applying clustering...")
+            predicted_boxes = adjust_for_crowded(predicted_boxes, crowded_threshold=50, eps=20)
+            print(f"[DEBUG] Sau clustering, số object: {len(predicted_boxes)}")
+        
+        # Tính tổng số object từ kết quả sau clustering (nếu có)
+        total_objects = len(predicted_boxes)
+        print(f"[DEBUG] Tổng số object phát hiện trên ảnh: {total_objects}")
 
         true_positives = 0
         for gt in gt_boxes:
