@@ -9,10 +9,7 @@ results = model_yolo.train(
     epochs=100,  # Tăng epochs nếu có thể
     imgsz=640,
     lr0=0.002,  # Learning rate ban đầu, thử giảm xuống nếu model bị overfit
-    lrf=0.01,  # Learning rate cuối
-    momentum=0.937,
-    weight_decay=0.0005,
-    optimizer="AdamW",  # Thử optimizer khác thay vì SGD mặc định
+    lrf=0.007,  # Learning rate cuối
     plots=True
 )
 
